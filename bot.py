@@ -1,5 +1,6 @@
 import logging
 import re
+import os
 from typing import Optional, Dict
 from aiogram import Bot, Dispatcher, types, Router
 from aiogram.filters import Command
@@ -8,6 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from sqlalchemy.sql import func
 import asyncio
+import os
 
 from config import Config
 from database import db
@@ -348,10 +350,87 @@ async def handle_quality_selection(callback: types.CallbackQuery, state: FSMCont
         f"⏳ Загрузка началась..."
     )
     
-    # TODO: Implement actual download logic here
-    # For now, just simulate
-    await asyncio.sleep(2)
-    await callback.message.answer("✅ Загрузка завершена! (демо)")
+    # Real download logic
+    try:
+        logger.info(f"Starting real download: {url}, format: {format_type}, quality: {quality}")
+        
+        # Download video
+        success, file_path, download_info = await downloader.download_video_async(
+            url, format_type, quality
+        )
+        
+        if success and file_path and os.path.exists(file_path):
+            file_size = os.path.getsize(file_path)
+            
+            # Check file size limit (50MB Telegram limit)
+            if file_size > Config.MAX_FILE_SIZE:
+                await callback.message.answer(
+                    f"❌ Файл слишком большой: {format_file_size(file_size)}\n"
+                    f"Максимальный размер: {format_file_size(Config.MAX_FILE_SIZE)}"
+                )
+                # Clean up large file
+                downloader.cleanup_file(file_path)
+                await state.clear()
+                await callback.answer()
+                return
+            
+            # Save to database
+            user = callback.from_user
+            if user:
+                try:
+                    with db.get_session() as session:
+                        db_user = session.query(User).filter(User.telegram_id == user.id).first()
+                        if db_user:
+                            download_request = DownloadRequest(
+                                user_id=db_user.id,
+                                youtube_url=url,
+                                video_title=video_info.get('title', 'Unknown'),
+                                video_duration=video_info.get('duration', 0),
+                                format_type=format_type,
+                                quality=quality,
+                                status="completed",
+                                file_path=file_path,
+                                file_size=file_size
+                            )
+                            session.add(download_request)
+                            session.commit()
+                except Exception as e:
+                    logger.error(f"Database error: {e}")
+            
+            # Send file to user
+            try:
+                with open(file_path, 'rb') as file:
+                    if format_type == "mp3":
+                        await callback.message.answer_audio(
+                            audio=file,
+                            title=video_info.get('title', 'Unknown'),
+                            performer=video_info.get('uploader', 'Unknown'),
+                            duration=int(video_info.get('duration', 0))
+                        )
+                    else:
+                        await callback.message.answer_video(
+                            video=file,
+                            caption=f"📹 {video_info.get('title', 'Unknown')}\n"
+                                   f"🎯 Формат: {format_type.upper()}\n"
+                                   f"⭐ Качество: {quality}\n"
+                                   f"📏 Размер: {format_file_size(file_size)}"
+                        )
+                
+                await callback.message.answer("✅ Загрузка завершена!")
+                
+                # Clean up file after sending
+                downloader.cleanup_file(file_path)
+                
+            except Exception as e:
+                logger.error(f"Error sending file: {e}")
+                await callback.message.answer(f"❌ Ошибка отправки файла: {e}")
+                downloader.cleanup_file(file_path)
+        else:
+            await callback.message.answer("❌ Ошибка загрузки видео. Попробуйте другой формат.")
+            
+    except Exception as e:
+        logger.error(f"Download error: {e}")
+        await callback.message.answer(f"❌ Ошибка загрузки: {e}")
     
     await state.clear()
     await callback.answer()

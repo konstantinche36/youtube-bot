@@ -1,85 +1,46 @@
 #!/usr/bin/env python3
-"""
-YouTube Download Telegram Bot
-Main entry point
-"""
+"""Main entry point for the YouTube Download Telegram Bot"""
 
 import asyncio
 import logging
-import sys
+import os
 from pathlib import Path
 
-# Add project root to path
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
-from config import Config
-from database import init_database
-from bot import main as bot_main
-
-def setup_logging():
-    """Setup logging configuration"""
-    log_level = getattr(logging, Config.LOG_LEVEL.upper())
-    
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler('youtube_bot.log'),
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
-
-def validate_config():
-    """Validate configuration"""
-    try:
-        Config.validate()
-        logging.info("Configuration validated successfully")
-    except ValueError as e:
-        logging.error(f"Configuration error: {e}")
-        sys.exit(1)
-
-def create_directories():
+def setup_directories():
     """Create necessary directories"""
     directories = [
-        Config.LOCAL_STORAGE_PATH,
-        "logs",
-        "temp"
+        "./downloads",
+        "./logs"
     ]
     
     for directory in directories:
         Path(directory).mkdir(parents=True, exist_ok=True)
-        logging.info(f"Created directory: {directory}")
+        logger.info(f"Created directory: {directory}")
 
-async def main():
-    """Main application entry point"""
-    print("🎬 YouTube Download Telegram Bot")
-    print("=" * 40)
+def main():
+    """Main function"""
+    logger.info("Starting Telegram bot...")
     
-    # Setup logging
-    setup_logging()
-    logger = logging.getLogger(__name__)
+    # Setup directories
+    setup_directories()
+    
+    # Import and run bot
+    from bot import main as bot_main
     
     try:
-        # Validate configuration
-        validate_config()
-        
-        # Create directories
-        create_directories()
-        
-        # Initialize database
-        logger.info("Initializing database...")
-        init_database()
-        
-        # Start bot
-        logger.info("Starting Telegram bot...")
-        await bot_main()
-        
+        asyncio.run(bot_main())
     except KeyboardInterrupt:
         logger.info("Bot stopped by user")
     except Exception as e:
-        logger.error(f"Unexpected error: {e}")
-        sys.exit(1)
+        logger.error(f"Bot error: {e}")
+        raise
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    main() 

@@ -52,24 +52,41 @@ class YouTubeDownloader:
             filename = f"{uuid.uuid4().hex}.{format_type}"
             filepath = os.path.join(Config.LOCAL_STORAGE_PATH, filename)
             
-            # Configure download options
-            ydl_opts = {
-                'format': f'best[ext={format_type}]' if format_type != "mp3" else 'bestaudio[ext=mp3]',
-                'outtmpl': filepath,
-                'quiet': True,
-                'no_warnings': True,
-                'progress_hooks': [self._progress_hook],
-            }
-            
-            # Add post-processing for audio
+            # Configure download options based on quality
             if format_type == "mp3":
-                ydl_opts['postprocessors'] = [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }]
+                # Audio only
+                ydl_opts = {
+                    'format': 'bestaudio[ext=mp3]/bestaudio',
+                    'outtmpl': filepath,
+                    'quiet': True,
+                    'no_warnings': True,
+                    'progress_hooks': [self._progress_hook],
+                    'postprocessors': [{
+                        'key': 'FFmpegExtractAudio',
+                        'preferredcodec': 'mp3',
+                        'preferredquality': '192',
+                    }]
+                }
+            else:
+                # Video formats
+                if quality == "best":
+                    format_spec = f'best[ext={format_type}]/best'
+                elif quality == "hd":
+                    format_spec = f'best[height<=720][ext={format_type}]/best[height<=720]'
+                elif quality == "medium":
+                    format_spec = f'best[height<=480][ext={format_type}]/best[height<=480]'
+                else:
+                    format_spec = f'best[ext={format_type}]/best'
+                
+                ydl_opts = {
+                    'format': format_spec,
+                    'outtmpl': filepath,
+                    'quiet': True,
+                    'no_warnings': True,
+                    'progress_hooks': [self._progress_hook],
+                }
             
-            logger.info(f"Starting download: {url}")
+            logger.info(f"Starting download: {url}, format: {format_type}, quality: {quality}")
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
