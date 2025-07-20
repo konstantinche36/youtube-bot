@@ -3,7 +3,7 @@ aiogram==3.4.1
 python-telegram-bot==20.7
 
 # YouTube Download
-yt-dlp==2024.1.7
+yt-dlp
 
 # Web Framework
 fastapi==0.109.0
