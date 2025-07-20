@@ -31,6 +31,15 @@ def main():
     # Setup directories
     setup_directories()
     
+    # Initialize database
+    try:
+        from database import init_database
+        logger.info("Initializing database...")
+        init_database()
+        logger.info("Database initialized successfully")
+    except Exception as e:
+        logger.error(f"Database initialization error: {e}")
+    
     # Import and run bot
     from bot import main as bot_main
     
