@@ -9,8 +9,8 @@ else:
     print("DEBUG: .env file not found, using environment variables")
 
 class Config:
-    # Telegram Bot
-    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+    # Telegram Bot - ВРЕМЕННО ЗАХАРДКОЖЕНО ДЛЯ ТЕСТИРОВАНИЯ
+    TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN") or "7902497697:AAHqEzqa-diC8_8LFse8CVf0PoGoD8Bf8wE"
     
     # Отладочная информация
     print(f"DEBUG: TELEGRAM_BOT_TOKEN = {TELEGRAM_BOT_TOKEN}")
@@ -19,24 +19,24 @@ class Config:
     
     # Проверяем все переменные окружения
     env_vars = {
-        'TELEGRAM_BOT_TOKEN': os.getenv("TELEGRAM_BOT_TOKEN"),
-        'DATABASE_URL': os.getenv("DATABASE_URL"),
-        'STORAGE_TYPE': os.getenv("STORAGE_TYPE"),
-        'LOG_LEVEL': os.getenv("LOG_LEVEL"),
-        'DEBUG': os.getenv("DEBUG")
+        'TELEGRAM_BOT_TOKEN': TELEGRAM_BOT_TOKEN,
+        'DATABASE_URL': os.getenv("DATABASE_URL") or "sqlite:///./youtube_bot.db",
+        'STORAGE_TYPE': os.getenv("STORAGE_TYPE") or "local",
+        'LOG_LEVEL': os.getenv("LOG_LEVEL") or "INFO",
+        'DEBUG': os.getenv("DEBUG") or "True"
     }
     print(f"DEBUG: Environment variables: {env_vars}")
     
     TELEGRAM_WEBHOOK_URL = os.getenv("TELEGRAM_WEBHOOK_URL")
     
     # Database
-    DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./youtube_bot.db")
+    DATABASE_URL = env_vars['DATABASE_URL']
     
     # Redis
     REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
     
     # File Storage
-    STORAGE_TYPE = os.getenv("STORAGE_TYPE", "local")
+    STORAGE_TYPE = env_vars['STORAGE_TYPE']
     LOCAL_STORAGE_PATH = os.getenv("LOCAL_STORAGE_PATH", "./downloads")
     AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
     AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
@@ -49,8 +49,8 @@ class Config:
     DEFAULT_QUALITY = "best"
     
     # App Settings
-    DEBUG = os.getenv("DEBUG", "False").lower() == "true"
-    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+    DEBUG = env_vars['DEBUG'].lower() == "true"
+    LOG_LEVEL = env_vars['LOG_LEVEL']
     
     # Security
     ALLOWED_USERS = os.getenv("ALLOWED_USERS", "").split(",") if os.getenv("ALLOWED_USERS") else []
