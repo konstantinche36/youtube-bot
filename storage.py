@@ -6,10 +6,14 @@ import boto3
 from botocore.exceptions import ClientError
 import aiofiles
 import asyncio
+from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import Config
 
 logger = logging.getLogger(__name__)
+
+# FSM Storage for aiogram
+storage = MemoryStorage()
 
 class StorageManager:
     def __init__(self):
@@ -196,4 +200,4 @@ class StorageManager:
             return {'total_size': 0, 'file_count': 0}
 
 # Global storage manager instance
-storage = StorageManager() 
+storage_manager = StorageManager() 

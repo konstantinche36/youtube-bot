@@ -21,12 +21,17 @@ logging.basicConfig(level=getattr(logging, Config.LOG_LEVEL))
 logger = logging.getLogger(__name__)
 
 # Validate configuration
-if not Config.TELEGRAM_BOT_TOKEN:
-    raise ValueError("TELEGRAM_BOT_TOKEN is required")
+try:
+    Config.validate()
+except ValueError as e:
+    logger.error(f"Configuration error: {e}")
+    print(f"ERROR: {e}")
+    print("Please check your environment variables")
+    exit(1)
 
 # Initialize bot and dispatcher
-bot = Bot(token=Config.TELEGRAM_BOT_TOKEN)  # type: ignore
-dp = Dispatcher()
+bot = Bot(token=Config.TELEGRAM_BOT_TOKEN)
+dp = Dispatcher(storage=storage)
 router = Router()
 
 # States for FSM
@@ -72,18 +77,24 @@ async def cmd_start(message: types.Message):
         return
     
     # Save user to database
-    with db.get_session() as session:
-        db_user = session.query(User).filter(User.telegram_id == user.id).first()
-        if not db_user:
-            db_user = User(
-                telegram_id=user.id,
-                username=user.username,
-                first_name=user.first_name,
-                last_name=user.last_name
-            )
-            session.add(db_user)
-        else:
-            db_user.last_activity = db.get_session_sync().query(func.now()).scalar()
+    try:
+        with db.get_session() as session:
+            db_user = session.query(User).filter(User.telegram_id == user.id).first()
+            if not db_user:
+                db_user = User(
+                    telegram_id=user.id,
+                    username=user.username,
+                    first_name=user.first_name,
+                    last_name=user.last_name
+                )
+                session.add(db_user)
+                session.commit()
+            else:
+                db_user.last_activity = func.now()
+                session.commit()
+    except Exception as e:
+        logger.error(f"Database error: {e}")
+        # Continue without database if there's an error
     
     welcome_text = f"""
 🎬 Привет, {user.first_name}!
@@ -138,23 +149,24 @@ async def cmd_stats(message: types.Message):
         await message.answer("❌ Ошибка: пользователь не найден")
         return
     
-    with db.get_session() as session:
-        db_user = session.query(User).filter(User.telegram_id == user.id).first()
-        if not db_user:
-            await message.answer("❌ Пользователь не найден")
-            return
+    try:
+        with db.get_session() as session:
+            db_user = session.query(User).filter(User.telegram_id == user.id).first()
+            if not db_user:
+                await message.answer("❌ Пользователь не найден")
+                return
+            
+            # Get user statistics
+            total_downloads = session.query(DownloadRequest).filter(
+                DownloadRequest.user_id == db_user.id,
+                DownloadRequest.status == "completed"
+            ).count()
+            
+            recent_downloads = session.query(DownloadRequest).filter(
+                DownloadRequest.user_id == db_user.id
+            ).order_by(DownloadRequest.created_at.desc()).limit(5).all()
         
-        # Get user statistics
-        total_downloads = session.query(DownloadRequest).filter(
-            DownloadRequest.user_id == db_user.id,
-            DownloadRequest.status == "completed"
-        ).count()
-        
-        recent_downloads = session.query(DownloadRequest).filter(
-            DownloadRequest.user_id == db_user.id
-        ).order_by(DownloadRequest.created_at.desc()).limit(5).all()
-    
-    stats_text = f"""
+        stats_text = f"""
 📊 Статистика пользователя {user.first_name}:
 
 📥 Всего загрузок: {total_downloads}
@@ -162,18 +174,21 @@ async def cmd_stats(message: types.Message):
 
 🕐 Последние загрузки:
 """
-    
-    for download in recent_downloads:
-        status = str(download.status)
-        if status == "completed":
-            status_emoji = "✅"
-        elif status == "processing":
-            status_emoji = "⏳"
-        else:
-            status_emoji = "❌"
-        stats_text += f"{status_emoji} {download.video_title[:30]}... ({status})\n"
-    
-    await message.answer(stats_text)
+        
+        for download in recent_downloads:
+            status = str(download.status)
+            if status == "completed":
+                status_emoji = "✅"
+            elif status == "processing":
+                status_emoji = "⏳"
+            else:
+                status_emoji = "❌"
+            stats_text += f"{status_emoji} {download.video_title[:30]}... ({status})\n"
+        
+        await message.answer(stats_text)
+    except Exception as e:
+        logger.error(f"Stats error: {e}")
+        await message.answer("❌ Ошибка при получении статистики")
 
 @router.message(Command("status"))
 async def cmd_status(message: types.Message):
@@ -183,32 +198,36 @@ async def cmd_status(message: types.Message):
         await message.answer("❌ Ошибка: пользователь не найден")
         return
     
-    with db.get_session() as session:
-        db_user = session.query(User).filter(User.telegram_id == user.id).first()
-        if not db_user:
-            await message.answer("❌ Пользователь не найден")
+    try:
+        with db.get_session() as session:
+            db_user = session.query(User).filter(User.telegram_id == user.id).first()
+            if not db_user:
+                await message.answer("❌ Пользователь не найден")
+                return
+            
+            # Get active downloads
+            active_downloads = session.query(DownloadRequest).filter(
+                DownloadRequest.user_id == db_user.id,
+                DownloadRequest.status.in_(["pending", "processing"])
+            ).all()
+        
+        if not active_downloads:
+            await message.answer("✅ Нет активных загрузок")
             return
         
-        # Get active downloads
-        active_downloads = session.query(DownloadRequest).filter(
-            DownloadRequest.user_id == db_user.id,
-            DownloadRequest.status.in_(["pending", "processing"])
-        ).all()
-    
-    if not active_downloads:
-        await message.answer("✅ Нет активных загрузок")
-        return
-    
-    status_text = "⏳ Активные загрузки:\n\n"
-    for download in active_downloads:
-        status = str(download.status)
-        if status == "processing":
-            status_emoji = "⏳"
-        else:
-            status_emoji = "📋"
-        status_text += f"{status_emoji} {download.video_title[:30]}... ({status})\n"
-    
-    await message.answer(status_text)
+        status_text = "⏳ Активные загрузки:\n\n"
+        for download in active_downloads:
+            status = str(download.status)
+            if status == "processing":
+                status_emoji = "⏳"
+            else:
+                status_emoji = "📋"
+            status_text += f"{status_emoji} {download.video_title[:30]}... ({status})\n"
+        
+        await message.answer(status_text)
+    except Exception as e:
+        logger.error(f"Status error: {e}")
+        await message.answer("❌ Ошибка при получении статуса")
 
 # Message handlers
 @router.message()
@@ -291,6 +310,58 @@ async def handle_youtube_url(message: types.Message, url: str, state: FSMContext
     
     # Set state
     await state.set_state(DownloadStates.waiting_for_format)
+
+# Callback query handlers
+@router.callback_query(lambda c: c.data.startswith('format_'))
+async def handle_format_selection(callback: types.CallbackQuery, state: FSMContext):
+    """Handle format selection"""
+    format_type = callback.data.replace('format_', '')
+    logger.info(f"Format selected: {format_type}")
+    
+    await state.update_data(format_type=format_type)
+    
+    await callback.message.answer(
+        f"🎯 Выбран формат: {format_type.upper()}\n\n"
+        "Теперь выберите качество:",
+        reply_markup=get_quality_keyboard()
+    )
+    
+    await state.set_state(DownloadStates.waiting_for_quality)
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith('quality_'))
+async def handle_quality_selection(callback: types.CallbackQuery, state: FSMContext):
+    """Handle quality selection"""
+    quality = callback.data.replace('quality_', '')
+    logger.info(f"Quality selected: {quality}")
+    
+    data = await state.get_data()
+    url = data.get('url', 'Unknown URL')
+    format_type = data.get('format_type', 'Unknown')
+    video_info = data.get('video_info', {})
+    
+    await callback.message.answer(
+        f"🎬 Начинаю загрузку!\n\n"
+        f"📹 Видео: {video_info.get('title', 'Unknown')}\n"
+        f"🎯 Формат: {format_type.upper()}\n"
+        f"⭐ Качество: {quality}\n\n"
+        f"⏳ Загрузка началась..."
+    )
+    
+    # TODO: Implement actual download logic here
+    # For now, just simulate
+    await asyncio.sleep(2)
+    await callback.message.answer("✅ Загрузка завершена! (демо)")
+    
+    await state.clear()
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data == 'cancel')
+async def handle_cancel(callback: types.CallbackQuery, state: FSMContext):
+    """Handle cancel"""
+    await callback.message.answer("❌ Операция отменена")
+    await state.clear()
+    await callback.answer()
 
 async def check_rate_limit(user_id: int) -> bool:
     """Check if user has exceeded rate limit"""

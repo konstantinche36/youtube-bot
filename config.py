@@ -4,6 +4,9 @@ from dotenv import load_dotenv
 # Загружаем .env файл только если он существует
 if os.path.exists('.env'):
     load_dotenv()
+    print("DEBUG: .env file loaded")
+else:
+    print("DEBUG: .env file not found, using environment variables")
 
 class Config:
     # Telegram Bot
@@ -11,7 +14,18 @@ class Config:
     
     # Отладочная информация
     print(f"DEBUG: TELEGRAM_BOT_TOKEN = {TELEGRAM_BOT_TOKEN}")
-    print(f"DEBUG: All env vars: {dict(os.environ)}")
+    print(f"DEBUG: TELEGRAM_BOT_TOKEN type = {type(TELEGRAM_BOT_TOKEN)}")
+    print(f"DEBUG: TELEGRAM_BOT_TOKEN length = {len(TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else 0}")
+    
+    # Проверяем все переменные окружения
+    env_vars = {
+        'TELEGRAM_BOT_TOKEN': os.getenv("TELEGRAM_BOT_TOKEN"),
+        'DATABASE_URL': os.getenv("DATABASE_URL"),
+        'STORAGE_TYPE': os.getenv("STORAGE_TYPE"),
+        'LOG_LEVEL': os.getenv("LOG_LEVEL"),
+        'DEBUG': os.getenv("DEBUG")
+    }
+    print(f"DEBUG: Environment variables: {env_vars}")
     
     TELEGRAM_WEBHOOK_URL = os.getenv("TELEGRAM_WEBHOOK_URL")
     
@@ -46,6 +60,8 @@ class Config:
     def validate(cls):
         """Validate required configuration"""
         if not cls.TELEGRAM_BOT_TOKEN:
+            print("ERROR: TELEGRAM_BOT_TOKEN is not set!")
+            print("ERROR: Please set TELEGRAM_BOT_TOKEN environment variable")
             raise ValueError("TELEGRAM_BOT_TOKEN is required")
         
         if cls.STORAGE_TYPE == "s3" and not all([
