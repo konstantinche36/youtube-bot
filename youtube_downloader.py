@@ -14,10 +14,26 @@ class YouTubeDownloader:
     def __init__(self):
         self.executor = ThreadPoolExecutor(max_workers=3)
         self._ensure_download_dir()
+        self._check_ffmpeg()
     
     def _ensure_download_dir(self):
         """Ensure download directory exists"""
         Path(Config.LOCAL_STORAGE_PATH).mkdir(parents=True, exist_ok=True)
+    
+    def _check_ffmpeg(self):
+        """Check if ffmpeg is available"""
+        try:
+            import subprocess
+            result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True)
+            if result.returncode == 0:
+                logger.info("ffmpeg is available")
+                self.ffmpeg_available = True
+            else:
+                logger.warning("ffmpeg not available, audio conversion may fail")
+                self.ffmpeg_available = False
+        except Exception as e:
+            logger.warning(f"Could not check ffmpeg: {e}")
+            self.ffmpeg_available = False
     
     def get_video_info(self, url: str) -> Optional[Dict]:
         """Get video information without downloading"""
@@ -52,21 +68,29 @@ class YouTubeDownloader:
             filename = f"{uuid.uuid4().hex}.{format_type}"
             filepath = os.path.join(Config.LOCAL_STORAGE_PATH, filename)
             
+            logger.info(f"Download path: {filepath}")
+            
             # Configure download options based on quality
             if format_type == "mp3":
                 # Audio only
                 ydl_opts = {
                     'format': 'bestaudio[ext=mp3]/bestaudio',
                     'outtmpl': filepath,
-                    'quiet': True,
-                    'no_warnings': True,
+                    'quiet': False,  # Enable output for debugging
+                    'no_warnings': False,  # Show warnings
                     'progress_hooks': [self._progress_hook],
-                    'postprocessors': [{
+                }
+                
+                # Add post-processor only if ffmpeg is available
+                if hasattr(self, 'ffmpeg_available') and self.ffmpeg_available:
+                    ydl_opts['postprocessors'] = [{
                         'key': 'FFmpegExtractAudio',
                         'preferredcodec': 'mp3',
                         'preferredquality': '192',
                     }]
-                }
+                    logger.info("Using ffmpeg for audio conversion")
+                else:
+                    logger.info("ffmpeg not available, downloading raw audio")
             else:
                 # Video formats
                 if quality == "best":
@@ -81,15 +105,18 @@ class YouTubeDownloader:
                 ydl_opts = {
                     'format': format_spec,
                     'outtmpl': filepath,
-                    'quiet': True,
-                    'no_warnings': True,
+                    'quiet': False,  # Enable output for debugging
+                    'no_warnings': False,  # Show warnings
                     'progress_hooks': [self._progress_hook],
                 }
             
             logger.info(f"Starting download: {url}, format: {format_type}, quality: {quality}")
+            logger.info(f"yt-dlp options: {ydl_opts}")
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                logger.info("yt-dlp instance created, extracting info...")
                 info = ydl.extract_info(url, download=True)
+                logger.info(f"Download completed, info: {info.get('title') if info else 'None'}")
                 
                 # Get actual file path (might be different for audio)
                 if format_type == "mp3":
@@ -97,8 +124,11 @@ class YouTubeDownloader:
                 else:
                     actual_filepath = filepath
                 
+                logger.info(f"Checking for file: {actual_filepath}")
+                
                 if os.path.exists(actual_filepath):
                     file_size = os.path.getsize(actual_filepath)
+                    logger.info(f"File exists: {actual_filepath}, size: {file_size}")
                     
                     return True, actual_filepath, {
                         'title': info['title'] if info and 'title' in info else 'Unknown',
@@ -109,10 +139,16 @@ class YouTubeDownloader:
                     }
                 else:
                     logger.error(f"Downloaded file not found: {actual_filepath}")
+                    # Check if any file was created
+                    import glob
+                    files = glob.glob(os.path.join(Config.LOCAL_STORAGE_PATH, "*"))
+                    logger.info(f"Files in download directory: {files}")
                     return False, "", None
                     
         except Exception as e:
             logger.error(f"Error downloading video: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return False, "", None
     
     def _progress_hook(self, d):

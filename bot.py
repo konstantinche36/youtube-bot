@@ -359,8 +359,11 @@ async def handle_quality_selection(callback: types.CallbackQuery, state: FSMCont
             url, format_type, quality
         )
         
+        logger.info(f"Download result: success={success}, file_path={file_path}")
+        
         if success and file_path and os.path.exists(file_path):
             file_size = os.path.getsize(file_path)
+            logger.info(f"File downloaded successfully: {file_path}, size: {file_size}")
             
             # Check file size limit (50MB Telegram limit)
             if file_size > Config.MAX_FILE_SIZE:
@@ -394,11 +397,13 @@ async def handle_quality_selection(callback: types.CallbackQuery, state: FSMCont
                             )
                             session.add(download_request)
                             session.commit()
+                            logger.info(f"Download saved to database: {download_request.id}")
                 except Exception as e:
                     logger.error(f"Database error: {e}")
             
             # Send file to user
             try:
+                logger.info(f"Sending file to user: {file_path}")
                 with open(file_path, 'rb') as file:
                     if format_type == "mp3":
                         await callback.message.answer_audio(
@@ -417,6 +422,7 @@ async def handle_quality_selection(callback: types.CallbackQuery, state: FSMCont
                         )
                 
                 await callback.message.answer("✅ Загрузка завершена!")
+                logger.info("File sent successfully to user")
                 
                 # Clean up file after sending
                 downloader.cleanup_file(file_path)
@@ -426,6 +432,7 @@ async def handle_quality_selection(callback: types.CallbackQuery, state: FSMCont
                 await callback.message.answer(f"❌ Ошибка отправки файла: {e}")
                 downloader.cleanup_file(file_path)
         else:
+            logger.error(f"Download failed: success={success}, file_path={file_path}")
             await callback.message.answer("❌ Ошибка загрузки видео. Попробуйте другой формат.")
             
     except Exception as e:
