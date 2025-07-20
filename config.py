@@ -1,11 +1,18 @@
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# Загружаем .env файл только если он существует
+if os.path.exists('.env'):
+    load_dotenv()
 
 class Config:
     # Telegram Bot
     TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+    
+    # Отладочная информация
+    print(f"DEBUG: TELEGRAM_BOT_TOKEN = {TELEGRAM_BOT_TOKEN}")
+    print(f"DEBUG: All env vars: {dict(os.environ)}")
+    
     TELEGRAM_WEBHOOK_URL = os.getenv("TELEGRAM_WEBHOOK_URL")
     
     # Database
@@ -15,7 +22,7 @@ class Config:
     REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
     
     # File Storage
-    STORAGE_TYPE = os.getenv("STORAGE_TYPE", "local")  # local, s3, gcs
+    STORAGE_TYPE = os.getenv("STORAGE_TYPE", "local")
     LOCAL_STORAGE_PATH = os.getenv("LOCAL_STORAGE_PATH", "./downloads")
     AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
     AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
@@ -33,7 +40,7 @@ class Config:
     
     # Security
     ALLOWED_USERS = os.getenv("ALLOWED_USERS", "").split(",") if os.getenv("ALLOWED_USERS") else []
-    RATE_LIMIT = int(os.getenv("RATE_LIMIT", "10"))  # requests per minute
+    RATE_LIMIT = int(os.getenv("RATE_LIMIT", "10"))
     
     @classmethod
     def validate(cls):
